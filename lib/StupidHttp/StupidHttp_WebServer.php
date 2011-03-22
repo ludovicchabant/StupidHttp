@@ -476,11 +476,11 @@ class StupidHttp_WebServer
         // ...ok, let's send the file.
         $extension = pathinfo($documentPath, PATHINFO_EXTENSION);
         $headers = array(
-            'Content-Length: ' . $documentSize,
-            'Content-MD5: ' . base64_encode($contentsHash),
-            'Content-Type: ' . (isset($this->mimeTypes[$extension]) ? $this->mimeTypes[$extension] : 'text/plain'),
-            'ETag: ' . $contentsHash,
-            'Last-Modified: ' . date("D, d M Y H:i:s T", filemtime($documentPath))
+            'Content-Length' => $documentSize,
+            'Content-MD5' => base64_encode($contentsHash),
+            'Content-Type' => (isset($this->mimeTypes[$extension]) ? $this->mimeTypes[$extension] : 'text/plain'),
+            'ETag' => $contentsHash,
+            'Last-Modified' => date("D, d M Y H:i:s T", filemtime($documentPath))
         );
         return $this->createResponse(200, $headers, $contents);
     }
@@ -515,8 +515,7 @@ class StupidHttp_WebServer
     {
         static $indexDocuments = array(
             'index.htm',
-            'index.html',
-            'index.php'
+            'index.html'
         );
         $path = rtrim($path, '/\\') . DIRECTORY_SEPARATOR;
         foreach ($indexDocuments as $doc)
