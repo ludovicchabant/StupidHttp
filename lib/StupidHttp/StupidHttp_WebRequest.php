@@ -68,7 +68,7 @@ class StupidHttp_WebRequest
             throw new StupidHttp_WebException('Unexpected request header format.', 0, '400 Bad Request');
         }
         $this->method = $matches[1];
-        $this->uri = $matches[2];
+        $this->uri = ($matches[2] == '/' ? '/' : rtrim($matches[2], '/'));
         $this->version = $matches[3];
         
         $this->headers = array();

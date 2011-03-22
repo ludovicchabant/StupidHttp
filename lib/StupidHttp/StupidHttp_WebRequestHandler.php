@@ -18,7 +18,7 @@ class StupidHttp_WebRequestHandler
     public function __construct(StupidHttp_WebServer $server, $uriPattern)
     {
         $this->server = $server;
-        $this->uriPattern = '/' . $uriPattern . '/';
+        $this->uriPattern = $uriPattern;
         $this->uriPatternMatches = array();
     }
     
@@ -41,7 +41,7 @@ class StupidHttp_WebRequestHandler
     public function _isMatch($uri)
     {
         if ($this->callback == null) return false;
-        return preg_match($this->uriPattern, $uri, $this->uriPatternMatches);
+        return preg_match('|' . $this->uriPattern . '|i', $uri, $this->uriPatternMatches);
     }
     
     /**
@@ -51,10 +51,9 @@ class StupidHttp_WebRequestHandler
     {
         $callback = $this->callback;
         
-        $matches = array();
         if (count($this->uriPatternMatches) > 1)
         {
-            return $callback($response, $matches);
+            return $callback($response, $this->uriPatternMatches);
         }
         return $callback($response);
     }

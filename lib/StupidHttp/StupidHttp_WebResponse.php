@@ -31,6 +31,7 @@ class StupidHttp_WebResponse
         $this->uri = $uri;
         $this->serverVariables = $serverVariables;
         $this->log = $log;
+        $this->status = 200;
         $this->headers = array();
     }
     
