@@ -394,10 +394,11 @@ class StupidHttp_WebServer
         }
         else if ($request->getMethod() == 'GET' and is_dir($documentPath))
         {
-            if (($indexPath = $this->getIndexDocument($documentPath)) != null)
+            $indexPath = $this->getIndexDocument($documentPath);
+            if ($indexPath != null)
             {
                 // Serve a directory's index file... 
-                return serveDocument($request, $documentPath);
+                return $this->serveDocument($request, $indexPath);
             }
             else if ($options['list_directories'] and
                      ($options['list_root_directory'] or $request->getUri() != '/'))
@@ -517,7 +518,7 @@ class StupidHttp_WebServer
             'index.html',
             'index.php'
         );
-        $path = rtrim('/\\', $path) . DIRECTORY_SEPARATOR;
+        $path = rtrim($path, '/\\') . DIRECTORY_SEPARATOR;
         foreach ($indexDocuments as $doc)
         {
             if (is_file($path . $doc))
