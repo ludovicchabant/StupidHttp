@@ -4,6 +4,7 @@ require_once 'StupidHttp_Log.php';
 require_once 'StupidHttp_WebRequest.php';
 require_once 'StupidHttp_WebResponse.php';
 require_once 'StupidHttp_WebException.php';
+require_once 'StupidHttp_HandlerContext.php';
 require_once 'StupidHttp_WebRequestHandler.php';
 
 
@@ -96,7 +97,7 @@ class StupidHttp_WebServer
         
         $this->address = $address;
         $this->port = $port;
-        $this->log = null;
+        $this->log = new StupidHttp_Log();
         
         if ($documentRoot != null and !is_dir($documentRoot))
         {
@@ -262,7 +263,6 @@ class StupidHttp_WebServer
                 }
                 else
                 {
-                    $this->logDebug("Got: " . $buf);
                     $emptyCount = 0;
                     $rawRequest[] = $buf;
                 }
@@ -271,42 +271,66 @@ class StupidHttp_WebServer
             
             if ($processRequest)
             {
+                $request = new StupidHttp_WebRequest($this, $rawRequest);
+                
+                // Process the request, get the response.
                 try
                 {
-                    $request = new StupidHttp_WebRequest($rawRequest);
-                    $this->processRequest($msgsock, $options, $request);
-                    switch ($request->getVersion())
-                    {
-                    case 'HTTP/1.0':
-                    default:
-                        // Always close, unless asked to keep alive.
-                        $closeSocket = ($request->getHeader('Connection') != 'keep-alive');
-                        break;
-                    case 'HTTP/1.1':
-                        // Always keep alive, unless asked to close.
-                        $closeSocket = ($request->getHeader('Connection') == 'close');
-                        break;
-                    }
+                    $response = $this->processRequest($options, $request);
                 }
                 catch (StupidHttp_WebException $e)
                 {
+                    $this->logError('Error processing request:');
                     $this->logError($e->getCode() . ': ' . $e->getMessage());
                     if ($e->getCode() != 0)
                     {
-                        $this->returnResponse($msgsock, $e->getCode());
+                        $response = $this->createResponse($e->getCode());
                     }
                     else
                     {
-                        $this->returnResponse($msgsock, 500);
+                        $response = $this->createResponse(500);
                     }
                 }
                 catch (Exception $e)
                 {
+                    $this->logError('Error processing request:');
                     $this->logError($e->getCode() . ': ' . $e->getMessage());
-                    $this->returnResponse($msgsock, 500);
+                    $response = $this->createResponse(500);
+                }
+                
+                // Figure out whether to close the connection with the client.
+                switch ($request->getVersion())
+                {
+                case 'HTTP/1.0':
+                default:
+                    // Always close, unless asked to keep alive.
+                    $closeSocket = ($request->getHeader('Connection') != 'keep-alive');
+                    break;
+                case 'HTTP/1.1':
+                    // Always keep alive, unless asked to close.
+                    $closeSocket = ($request->getHeader('Connection') == 'close');
+                    break;
+                }
+                
+                // Adjust the headers and send the response.
+                if ($closeSocket) $response->setHeader('Connection', 'close');
+                else $response->setHeader('Connection', 'keep-alive');
+                if ($response->getHeader('Content-Length') == null)
+                {
+                    if ($response->getBody() != null) $response->setHeader('Content-Length', strlen($response->getBody()));
+                    else $response->setHeader('Content-Length', 0);
+                }
+                try
+                {
+                    $this->sendResponse($msgsock, $response);
+                }
+                catch (Exception $e)
+                {
+                    $this->logError('Error sending response:');
+                    $this->logError($e->getCode() . ': ' . $e->getMessage());
                 }
             }
-            
+    
             if ($closeSocket)
             {
                 $this->logDebug("Closing connection.");
@@ -357,7 +381,7 @@ class StupidHttp_WebServer
         }
     }
     
-    protected function processRequest($sock, array $options, StupidHttp_WebRequest $request)
+    protected function processRequest(array $options, StupidHttp_WebRequest $request)
     {
         $this->logInfo('> ' . $request->getMethod() . ' ' . $request->getUri());
         
@@ -366,64 +390,52 @@ class StupidHttp_WebServer
         if ($request->getMethod() == 'GET' and is_file($documentPath))
         {
             // Serve existing file...
-            $this->serveDocument($sock, $request, $documentPath);
-            $handled = true;
+            return $this->serveDocument($request, $documentPath);
         }
         else if ($request->getMethod() == 'GET' and is_dir($documentPath))
         {
             if (($indexPath = $this->getIndexDocument($documentPath)) != null)
             {
                 // Serve a directory's index file... 
-                $this->serveDocument($sock, $request, $documentPath);
-                $handled = true;
+                return serveDocument($request, $documentPath);
             }
             else if ($options['list_directories'] and
                      ($options['list_root_directory'] or $request->getUri() != '/'))
             {
                 // Serve the directory's contents...
-                $this->serveDirectory($sock, $request, $documentPath);
-                $handled = true;
+                return $this->serveDirectory($request, $documentPath);
             }
         }
         
-        if (!$handled and isset($this->requestHandlers[$request->getMethod()]))
+        if (isset($this->requestHandlers[$request->getMethod()]))
         {
             // Run the request handlers.
             foreach ($this->requestHandlers[$request->getMethod()] as $handler)
             {
                 if ($handler->_isMatch($request->getUri()))
                 {
-                    $server = $this->buildServerVariables($request);
-                    $response = new StupidHttp_WebResponse($request->getUri(), $server, $this->log);
+                    $response = new StupidHttp_WebResponse();
+                    $context = new StupidHttp_HandlerContext($request, $response, $this->getLog());
                     ob_start();
-                    $handler->_run($response);
+                    $handler->_run($context);
                     $body = ob_get_clean();
-                    $this->returnResponse(
-                        $sock,
-                        $response->getStatus(),
-                        $response->getFormattedHeaders(),
-                        $body
-                    );
-                    $handled = true;
-                    break;
+                    $response->setBody($body);
+                    return $response;
                 }
             }
         }
         
-        if (!$handled)
+        if ($request->getMethod() == 'GET')
         {
-            if ($request->getMethod() == 'GET')
-            {
-                $this->returnResponse($sock, 404);  // Not found.
-            }
-            else
-            {
-                $this->returnResponse($sock, 501);  // Method not implemented.
-            }
+            return $this->createResponse(404);  // Not found.
+        }
+        else
+        {
+            return $this->createResponse(501);  // Method not implemented.
         }
     }
     
-    protected function serveDocument($sock, StupidHttp_WebRequest $request, $documentPath)
+    protected function serveDocument(StupidHttp_WebRequest $request, $documentPath)
     {
         // First, check for timestamp if possible.
         $serverTimestamp = filemtime($documentPath);
@@ -433,8 +445,7 @@ class StupidHttp_WebServer
             $clientTimestamp = strtotime($ifModifiedSince);
             if ($clientTimestamp > $serverTimestamp)
             {
-                $this->returnResponse($sock, 304);
-                return;
+                return $this->createResponse(304);
             }
         }
         
@@ -442,8 +453,7 @@ class StupidHttp_WebServer
         $documentSize = filesize($documentPath);
         if ($documentSize == 0)
         {
-            $this->returnResponse($sock, 200);
-            return;
+            return $this->createResponse(200);
         }
         $documentHandle = fopen($documentPath, "rb");
         $contents = fread($documentHandle, $documentSize);
@@ -458,8 +468,7 @@ class StupidHttp_WebServer
         {
             if ($ifNoneMatch == $contentsHash)
             {
-                $this->returnResponse($sock, 304);
-                return;
+                return $this->createResponse(304);
             }
         }
         
@@ -472,11 +481,13 @@ class StupidHttp_WebServer
             'ETag: ' . $contentsHash,
             'Last-Modified: ' . date("D, d M Y H:i:s T", filemtime($documentPath))
         );
-        $this->returnResponse($sock, 200, $headers, $contents);
+        return $this->createResponse(200, $headers, $contents);
     }
     
-    protected function serveDirectory($sock, StupidHttp_WebRequest $request, $documentPath)
+    protected function serveDirectory(StupidHttp_WebRequest $request, $documentPath)
     {
+        $headers = array();
+        
         $contents = '<ul>' . PHP_EOL;
         foreach (new DirectoryIterator($documentPath) as $entry)
         {
@@ -490,7 +501,7 @@ class StupidHttp_WebServer
         );
         $body = file_get_contents(dirname(__FILE__) . DIRECTORY_SEPARATOR . 'directory-listing.html');
         $body = str_replace(array_keys($replacements), array_values($replacements), $body);
-        $this->returnResponse($sock, 200, null, $body);
+        return $this->createResponse(200, $headers, $body);
     }
     
     protected function getDocumentPath($uri)
@@ -517,59 +528,33 @@ class StupidHttp_WebServer
         return null;
     }
     
-    protected function returnResponse($sock, $code, $headers = null, $contents = null)
+    protected function createResponse($code, array $headers = array(), $contents = null)
     {
         if (!is_int($code)) throw new StupidHttp_WebException('The given HTTP return code was not an integer: ' . $code, 500);
         
-        $this->logInfo('    ->  ' . self::getHttpStatusHeader($code));
-        $this->logDebug('    : ' . memory_get_usage() / (1024.0 * 1024.0) . 'Mb');
-        
-        $response = "HTTP/1.1 " . self::getHttpStatusHeader($code) . PHP_EOL;
-        $response .= "Server: PieCrust Chef Server\n";
-        $response .= "Date: " . date("D, d M Y H:i:s T") . PHP_EOL;
-        if ($headers != null)
-        {
-            foreach ($headers as $header)
-            {
-                $response .= $header . PHP_EOL;
-            }
-        }
-        
-        if ($contents != null)
-        {
-            $response .= PHP_EOL;
-            $response .= $contents;
-        }
-        else
-        {
-            $response .= PHP_EOL;
-        }
-        
-        socket_write($sock, $response, strlen($response));
+        return new StupidHttp_WebResponse($code, $headers, $contents);
     }
     
-    protected function buildServerVariables(StupidHttp_WebRequest $request)
+    protected function sendResponse($sock, StupidHttp_WebResponse $response)
     {
-        $server = array();
+        $this->logInfo('    ->  ' . self::getHttpStatusHeader($response->getStatus()));
+        $this->logDebug('    : ' . memory_get_usage() / (1024.0 * 1024.0) . 'Mb');
         
-        $server['REQUEST_METHOD'] = $request->getMethod();
-        $server['SERVER_NAME'] = $this->address;
-        $server['SERVER_PORT'] = $this->port;
-        $server['SERVER_PROTOCOL'] = 'HTTP/1.1';
-        $server['QUERY_STRING'] = $request->getUri();
-        $server['REQUEST_URI'] = $request->getUri();
-        $server['REQUEST_TIME'] = time();
-        $server['argv'] = array();
-        $server['argc'] = 0;
-        
-        $headers = $request->getHeaders();
-        foreach ($headers as $key => $value)
+        $responseStr = "HTTP/1.1 " . self::getHttpStatusHeader($response->getStatus()) . PHP_EOL;
+        $responseStr .= "Server: PieCrust Chef Server\n";
+        $responseStr .= "Date: " . date("D, d M Y H:i:s T") . PHP_EOL;
+        foreach ($response->getFormattedHeaders() as $header)
         {
-            $serverKey = 'HTTP_' . str_replace('-', '_', strtoupper($key));
-            $server[$serverKey] = $value;
+            $responseStr .= $header . PHP_EOL;
         }
         
-        return $server;
+        $responseStr .= PHP_EOL;
+        if ($response->getBody() != null)
+        {
+            $responseStr .= $response->getBody();
+        }
+        
+        socket_write($sock, $responseStr, strlen($responseStr));
     }
     
     protected function log($message, $type)

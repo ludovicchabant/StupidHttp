@@ -47,14 +47,14 @@ class StupidHttp_WebRequestHandler
     /**
      * Internal use only.
      */
-    public function _run($response)
+    public function _run($context)
     {
         $callback = $this->callback;
         
         if (count($this->uriPatternMatches) > 1)
         {
-            return $callback($response, $this->uriPatternMatches);
+            return $callback($context, $this->uriPatternMatches);
         }
-        return $callback($response);
+        return $callback($context);
     }
 }
