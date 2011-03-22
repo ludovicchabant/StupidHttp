@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Komodo Project File - DO NOT EDIT -->
+<project id="786997ba-494c-4a5a-80e6-5a80afe67f79" kpf_version="5" name="StupidHttp.komodoproject">
+<preference-set idref="786997ba-494c-4a5a-80e6-5a80afe67f79">
+  <string relative="path" id="import_dirname"></string>
+  <string id="import_exclude_matches">*.*~;*.bak;*.tmp;CVS;.#*;*.pyo;*.pyc;.svn;_svn;.git;.hg;.bzr;*%*;tmp*.html;.DS_Store;*.swp;*.kpf;*.komodoproject;*.komodotools</string>
+  <string id="import_include_matches"></string>
+  <string id="phpExtraPaths"></string>
+</preference-set>
+</project>
