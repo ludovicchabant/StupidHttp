@@ -14,7 +14,9 @@ require_once 'StupidHttp_WebRequestHandler.php';
 class StupidHttp_WebServer
 {
     protected $sock;
+    protected $mounts;
     protected $requestHandlers;
+    protected $preprocessor;
  
     protected $documentRoot;
     /**
@@ -174,13 +176,21 @@ class StupidHttp_WebServer
         return $handler;
     }
     
-    protected $mounts;
     /**
      * Mounts a directory into the document root.
      */
     public function mount($directory, $alias)
     {
         $this->mounts[$alias] = rtrim($directory, '/\\');
+    }
+    
+    /**
+     * Sets the preprocessor that is run before each request.
+     */
+    public function setPreprocess($preprocessor)
+    {
+        if (!is_callable($preprocessor)) throw new PieCrustException('The preprocessor needs to be a callable object.');
+        $this->preprocessor = $preprocessor;
     }
 
     /**
@@ -205,12 +215,15 @@ class StupidHttp_WebServer
             array(
                 'list_directories' => true,
                 'list_root_directory' => false, 
-                'run_browser' => false
+                'run_browser' => false,
+                'keep_alive' => false,
+                'timeout' => 3,
+                'show_banner' => true
             ),
             $options
         );
         
-        $this->setupNetworking();
+        $this->setupNetworking($options);
         
         if ($options['run_browser'] === true)
         {
@@ -228,7 +241,7 @@ class StupidHttp_WebServer
                     throw new StupidHttp_WebException("Failed accepting connection: " . socket_strerror(socket_last_error($this->sock)));
                 }
                 
-                $timeout = array('sec' => 5, 'usec' => 0);
+                $timeout = array('sec' => $options['timeout'], 'usec' => 0);
                 if (@socket_set_option($msgsock, SOL_SOCKET, SO_RCVTIMEO, $timeout) === false)
                 {
                     throw new StupidHttp_WebException("Failed setting timeout value: " . socket_strerror(socket_last_error($msgsock)));
@@ -237,8 +250,8 @@ class StupidHttp_WebServer
         
             $emptyCount = 0;
             $rawRequest = array();
-            $closeSocket = true;
             $processRequest = false;
+            $profilingInfo = array();
             do
             {
                 if (false === ($buf = @socket_read($msgsock, 2048, PHP_NORMAL_READ)))
@@ -246,9 +259,12 @@ class StupidHttp_WebServer
                     if (socket_last_error($msgsock) === SOCKET_ETIMEDOUT)
                     {
                         // Kept-alive connection probably timed out. Just close it.
-                        $closeSocket = true;
                         $processRequest = false;
-                        if (!empty($rawRequest))
+                        if (empty($rawRequest))
+                        {
+                            $this->logDebug("    : Timed out... ending conversation.");
+                        }
+                        else
                         {
                             $this->logError("Timed out while receiving request.");
                         }
@@ -257,11 +273,11 @@ class StupidHttp_WebServer
                     else
                     {
                         $this->logError("Error reading request from connection: " . socket_strerror(socket_last_error($msgsock)));
-                        $closeSocket = true;
                         $processRequest = false;
                         break;
                     }
                 }
+                if (empty($rawRequest)) $profilingInfo['receive.start'] = microtime(true);
                 if (!$buf = trim($buf))
                 {
                     $emptyCount++;
@@ -278,14 +294,23 @@ class StupidHttp_WebServer
                 }
             }
             while (true);
+            $profilingInfo['receive.end'] = microtime(true);
             
+            $closeSocket = true;
             if ($processRequest)
             {
+                $profilingInfo['process.start'] = microtime(true);
                 $request = new StupidHttp_WebRequest($this, $rawRequest);
                 
                 // Process the request, get the response.
                 try
                 {
+                    if ($this->preprocessor != null)
+                    {
+                        $this->logInfo('... preprocessing ' . $request->getUri() . ' ...');
+                        $func = $this->preprocessor;
+                        $func($request);
+                    }
                     $response = $this->processRequest($options, $request);
                 }
                 catch (StupidHttp_WebException $e)
@@ -309,17 +334,24 @@ class StupidHttp_WebServer
                 }
                 
                 // Figure out whether to close the connection with the client.
-                switch ($request->getVersion())
+                if ($options['keep_alive'])
                 {
-                case 'HTTP/1.0':
-                default:
-                    // Always close, unless asked to keep alive.
-                    $closeSocket = ($request->getHeader('Connection') != 'keep-alive');
-                    break;
-                case 'HTTP/1.1':
-                    // Always keep alive, unless asked to close.
-                    $closeSocket = ($request->getHeader('Connection') == 'close');
-                    break;
+                    switch ($request->getVersion())
+                    {
+                    case 'HTTP/1.0':
+                    default:
+                        // Always close, unless asked to keep alive.
+                        $closeSocket = ($request->getHeader('Connection') != 'keep-alive');
+                        break;
+                    case 'HTTP/1.1':
+                        // Always keep alive, unless asked to close.
+                        $closeSocket = ($request->getHeader('Connection') == 'close');
+                        break;
+                    }
+                }
+                else
+                {
+                    $closeSocket = true;
                 }
                 
                 // Adjust the headers and send the response.
@@ -330,6 +362,9 @@ class StupidHttp_WebServer
                     if ($response->getBody() != null) $response->setHeader('Content-Length', strlen($response->getBody()));
                     else $response->setHeader('Content-Length', 0);
                 }
+                
+                $profilingInfo['process.end'] = microtime(true);
+                $profilingInfo['send.start'] = microtime(true);
                 try
                 {
                     $this->sendResponse($msgsock, $response);
@@ -339,9 +374,12 @@ class StupidHttp_WebServer
                     $this->logError('Error sending response:');
                     $this->logError($e->getCode() . ': ' . $e->getMessage());
                 }
+                $profilingInfo['send.end'] = microtime(true);
             }
-    
-            if ($closeSocket)
+            
+            $this->logProfilingInfo($profilingInfo);
+            
+            if ($closeSocket or !$processRequest)
             {
                 $this->logDebug("Closing connection.");
                 socket_close($msgsock);
@@ -352,7 +390,7 @@ class StupidHttp_WebServer
         while (true);
     }
     
-    protected function setupNetworking()
+    protected function setupNetworking(array $options)
     {
         if (($this->sock = @socket_create(AF_INET, SOCK_STREAM, SOL_TCP)) === false)
         {
@@ -369,11 +407,18 @@ class StupidHttp_WebServer
             throw new StupidHttp_WebException("Failed listening to socket on " . $this->address . ":" . $this->port . ": " . socket_strerror(socket_last_error($this->sock)));
         }
         
-        $this->logInfo("");
-        $this->logInfo("STUPID-HTTP SERVER");
-        $this->logInfo("");
-        $this->logInfo("Listening on " . $this->address . ":" . $this->port . "...");
-        $this->logInfo("");
+        if ($options['show_banner'])
+        {
+            $this->logInfo("");
+            $this->logInfo("STUPID-HTTP SERVER");
+            $this->logInfo("");
+            $this->logInfo("Listening on " . $this->address . ":" . $this->port . "...");
+            $this->logInfo("");
+        }
+        else
+        {
+            $this->logDebug("Started server on " . $this->address . ":" . $this->port);
+        }
     }
     
     protected function runBrowser()
@@ -578,6 +623,22 @@ class StupidHttp_WebServer
         socket_write($sock, $responseStr, strlen($responseStr));
     }
     
+    protected function logProfilingInfo(array $profilingInfo)
+    {
+        if (isset($profilingInfo['receive.start']) and isset($profilingInfo['receive.end']))
+        {
+            $this->logDebug('    : received request in ' . ($profilingInfo['receive.end'] - $profilingInfo['receive.start'])*1000.0 . ' ms.');
+        }
+        if (isset($profilingInfo['process.start']) and isset($profilingInfo['process.end']))
+        {
+            $this->logDebug('    : processed in ' . ($profilingInfo['process.end'] - $profilingInfo['process.start'])*1000.0 . ' ms.');
+        }
+        if (isset($profilingInfo['send.start']) and isset($profilingInfo['send.end']))
+        {
+            $this->logDebug('    : sent request in ' . ($profilingInfo['send.end'] - $profilingInfo['send.start'])*1000.0 . ' ms.');
+        }
+    }
+    
     protected function log($message, $type)
     {
         if ($this->log != null)
@@ -665,3 +726,4 @@ foreach ($shady_functions as $name)
         errexit("StupidHttp: Function '" . $name. "' is not available on your system.");
     }
 }
+unset($shady_functions);
