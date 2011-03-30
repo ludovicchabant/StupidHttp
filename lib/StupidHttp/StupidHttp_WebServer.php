@@ -217,7 +217,7 @@ class StupidHttp_WebServer
                 'list_root_directory' => false, 
                 'run_browser' => false,
                 'keep_alive' => false,
-                'timeout' => 3,
+                'timeout' => 4,
                 'show_banner' => true
             ),
             $options
@@ -382,7 +382,9 @@ class StupidHttp_WebServer
             if ($closeSocket or !$processRequest)
             {
                 $this->logDebug("Closing connection.");
-                socket_close($msgsock);
+                usleep(100);  // Weird, this seems to fix some networking problems...
+                @socket_shutdown($msgsock);
+                @socket_close($msgsock);
                 $msgsock = false;
                 gc_collect_cycles();
             }
@@ -395,6 +397,11 @@ class StupidHttp_WebServer
         if (($this->sock = @socket_create(AF_INET, SOCK_STREAM, SOL_TCP)) === false)
         {
             throw new StupidHttp_WebException("Can't create socket: " . socket_strerror(socket_last_error()));
+        }
+        
+        if (@socket_set_option($this->sock, SOL_SOCKET, SO_REUSEADDR) === false)
+        {
+            throw new StupidHttp_WebException("Can't set options on the socket: " . socket_strerror(socket_last_error()));
         }
         
         if (@socket_bind($this->sock, $this->address, $this->port) === false)
@@ -619,8 +626,22 @@ class StupidHttp_WebServer
         {
             $responseStr .= $response->getBody();
         }
+        $responseStr .= "\n\0";
         
-        socket_write($sock, $responseStr, strlen($responseStr));
+        $transmitted = 0;
+        $responseLength = strlen($responseStr);
+        while ($transmitted < $responseLength)
+        {
+            $socketWriteLength = min($responseLength - $transmitted, 1024);
+            $transmittedThisTime = @socket_write($sock, $responseStr, $socketWriteLength);
+            if (false === $transmittedThisTime)
+            {
+                throw new StupidHttp_WebException("Couldn't write response to socket: " . socket_strerror(socket_last_error($sock)));
+            }
+            $transmitted += $transmittedThisTime;
+            $responseStr = substr($responseStr, $transmittedThisTime);
+            $this->logDebug('    : transmitted ' . $transmittedThisTime . ' bytes, ' . ($responseLength - $transmitted) . ' left to go.');
+        }
     }
     
     protected function logProfilingInfo(array $profilingInfo)
