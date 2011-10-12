@@ -252,9 +252,10 @@ class StupidHttp_WebServer
             $rawRequest = array();
             $processRequest = false;
             $profilingInfo = array();
+            $msgsockReceiveBufferSize = @socket_get_option($this->sock, SOL_SOCKET, SO_RCVBUF);
             do
             {
-                if (false === ($buf = @socket_read($msgsock, 2048, PHP_NORMAL_READ)))
+                if (false === ($buf = @socket_read($msgsock, $msgsockReceiveBufferSize, PHP_NORMAL_READ)))
                 {
                     if (socket_last_error($msgsock) === SOCKET_ETIMEDOUT)
                     {
@@ -399,7 +400,7 @@ class StupidHttp_WebServer
             throw new StupidHttp_WebException("Can't create socket: " . socket_strerror(socket_last_error()));
         }
         
-        if (@socket_set_option($this->sock, SOL_SOCKET, SO_REUSEADDR) === false)
+        if (@socket_set_option($this->sock, SOL_SOCKET, SO_REUSEADDR, 1) === false)
         {
             throw new StupidHttp_WebException("Can't set options on the socket: " . socket_strerror(socket_last_error()));
         }
@@ -445,7 +446,7 @@ class StupidHttp_WebServer
     
     protected function processRequest(array $options, StupidHttp_WebRequest $request)
     {
-        $this->logInfo('> ' . $request->getMethod() . ' ' . $request->getUri());
+        $this->logDebug('> ' . $request->getMethod() . ' ' . $request->getUri());
         
         $handled = false;
         $documentPath = $this->getDocumentPath($request->getUri());
@@ -610,11 +611,11 @@ class StupidHttp_WebServer
     
     protected function sendResponse($sock, StupidHttp_WebResponse $response)
     {
-        $this->logInfo('    ->  ' . self::getHttpStatusHeader($response->getStatus()));
+        $this->logDebug('    ->  ' . self::getHttpStatusHeader($response->getStatus()));
         $this->logDebug('    : ' . memory_get_usage() / (1024.0 * 1024.0) . 'Mb');
         
         $responseStr = "HTTP/1.1 " . self::getHttpStatusHeader($response->getStatus()) . PHP_EOL;
-        $responseStr .= "Server: PieCrust Chef Server\n";
+        $responseStr .= "Server: PieCrust Chef Server".PHP_EOL;
         $responseStr .= "Date: " . date("D, d M Y H:i:s T") . PHP_EOL;
         foreach ($response->getFormattedHeaders() as $header)
         {
@@ -626,13 +627,13 @@ class StupidHttp_WebServer
         {
             $responseStr .= $response->getBody();
         }
-        $responseStr .= "\n\0";
         
         $transmitted = 0;
         $responseLength = strlen($responseStr);
+        $sockSendBufferSize = @socket_get_option($this->sock, SOL_SOCKET, SO_SNDBUF);
         while ($transmitted < $responseLength)
         {
-            $socketWriteLength = min($responseLength - $transmitted, 1024);
+            $socketWriteLength = min($responseLength - $transmitted, $sockSendBufferSize);
             $transmittedThisTime = @socket_write($sock, $responseStr, $socketWriteLength);
             if (false === $transmittedThisTime)
             {
