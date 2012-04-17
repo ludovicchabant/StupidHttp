@@ -325,7 +325,7 @@ class StupidHttp_WebServer
                 {
                     if ($this->preprocessor != null)
                     {
-                        $this->logInfo('... preprocessing ' . $request->getUri() . ' ...');
+                        $this->logDebug('... preprocessing ' . $request->getUri() . ' ...');
                         $func = $this->preprocessor;
                         $func($request);
                     }
@@ -602,6 +602,7 @@ class StupidHttp_WebServer
     protected function getDocumentPath($uri)
     {
         $root = $this->getDocumentRoot();
+        $uri = rawurldecode($uri);
         $secondSlash = strpos($uri, '/', 1);
         if ($secondSlash !== false)
         {
@@ -611,6 +612,11 @@ class StupidHttp_WebServer
                 $root = $this->mounts[$firstDir];
                 $uri = substr($uri, $secondSlash);
             }
+        }
+        $questionMark = strpos($uri, '?');
+        if ($questionMark !== false)
+        {
+            $uri = substr($uri, 0, $questionMark);
         }
         if ($root === false) return false;
         return $root . str_replace('/', DIRECTORY_SEPARATOR, $uri);
