@@ -36,5 +36,5 @@ simple web application show up in your default browser.
 ## Other Resources
 
 For more information, documentation and examples, check out the [StupidHttp
-website](http://bolt80/stupidhttp/).
+website](http://bolt80.com/stupidhttp/).
 
