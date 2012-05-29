@@ -30,9 +30,10 @@ class StupidHttp_ResponseBuilder
         // Run the preprocessor, if any.
         if ($this->preprocessor != null)
         {
-            $this->log->debug('Preprocessing ' . $request->getUri() . ' ...');
+            $this->log->debug("Preprocessing '{$request->getUri()}'...");
             $func = $this->preprocessor;
             $func($request);
+            $this->log->debug("Done preprocessing '{$request->getUri()}'.");
         }
 
         // See if the request maps to an existing file on our VFS.

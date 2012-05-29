@@ -6,7 +6,7 @@
 class StupidHttp_Driver
 {
     const REQUEST_DATE_FORMAT = "Y/m/d H:i:s";
-    const REQUEST_LOG_FORMAT = "[%date%] %client_ip% --> %method% %path% --> %status% %status_name% [%time%]";
+    const REQUEST_LOG_FORMAT = "[%date%] %client_ip% --> %method% %path% --> %status% %status_name% [%time%ms]";
 
     protected $options;
     protected $connection;
