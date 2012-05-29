@@ -29,7 +29,7 @@ function print_request($r)
     echo 'First Name: <input type="text" name="first_name" /><br/>';
     echo 'Last Name: <input type="text" name="last_name" /><br/>';
     echo 'Are You Awesome? <input type="checkbox" name="is_awesome" /><br/>';
-    echo 'You Credit Card Number: <input type="password" name="password" /><br/>';
+    echo 'Your Credit Card Number: <input type="password" name="password" /><br/>';
     echo '<input type="submit" value="Send!" name="submit_btn" />';
     echo '</form>';
 
@@ -39,7 +39,7 @@ function print_request($r)
     echo 'First Name: <input type="text" name="first_name" /><br/>';
     echo 'Last Name: <input type="text" name="last_name" /><br/>';
     echo 'Are You Awesome? <input type="checkbox" name="is_awesome" /><br/>';
-    echo 'You Credit Card Number: <input type="password" name="password" /><br/>';
+    echo 'Your Credit Card Number: <input type="password" name="password" /><br/>';
     echo '<input type="submit" value="Send!" name="submit_btn" />';
     echo '</form>';
     echo '</body></html>';
