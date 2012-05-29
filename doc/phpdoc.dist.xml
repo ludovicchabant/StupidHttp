@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<phpdoc>
+    <title>StupidHttp Documentation</title>
+    <parser
+        default-package-name="StupidHttp"
+        >
+        <target>html</target>
+        <markers>
+            <item>TODO</item>
+        </markers>
+    </parser>
+    <transformer>
+        <target>html</target>
+    </transformer>
+    <files>
+        <directory>../lib</directory>
+    </files>
+</phpdoc>

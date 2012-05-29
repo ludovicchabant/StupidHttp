@@ -1,7 +1,5 @@
 <?php
 
-require_once 'Log.php';
-
 
 /**
  * A StupidHttp_Log class that wraps a PEAR logger.

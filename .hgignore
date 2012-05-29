@@ -1,2 +1,8 @@
 syntax: glob
 doc/html
+tests/libs/.composer
+tests/libs/mikey179/vfsStream/.gitignore
+tests/libs/mikey179/vfsStream/.travis.yml
+tests/libs/mikey179/vfsStream/examples
+tests/libs/mikey179/vfsStream/src/test
+
