@@ -5,12 +5,16 @@ class StupidHttp_Mock_NetworkHandler extends StupidHttp_SocketNetworkHandler
     public $registered;
     public $connections;
     public $contents;
+    public $bucket;
 
-    public function __construct($contents = '')
+    public function __construct($contents = '', $connections = array())
     {
         $this->registered = false;
-        $this->connections = array();
         $this->contents = $contents;
+        if (!is_array($connections))
+            $connections = array($connections);
+        $this->connections = $connections;
+        $this->bucket = '';
     }
 
     public function register()
@@ -25,11 +29,9 @@ class StupidHttp_Mock_NetworkHandler extends StupidHttp_SocketNetworkHandler
         $this->registered = false;
     }
 
-    public function connect($options)
+    public function connect(array $connections, $options)
     {
-        $c = time();
-        $this->connections += $c;
-        return $c;
+        return $this->connections;
     }
 
     public function getClientInfo($connection)
@@ -42,14 +44,11 @@ class StupidHttp_Mock_NetworkHandler extends StupidHttp_SocketNetworkHandler
 
     public function disconnect($connection)
     {
-        $i = array_search($connection, $this->connections);
-        if ($i === false)
-            throw new Exception("Connection '{$connection}' is unknown.");
-        unset($this->connections[$i]);
     }
 
     public function write($connection, $data)
     {
+        $this->bucket .= $data;
         return strlen($data);
     }
 
