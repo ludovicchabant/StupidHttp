@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit
-    bootstrap="bootstrap.php"
+    bootstrap="tests/bootstrap.php"
     >
     <testsuites>
         <testsuite name="StupidHttp Tests">
-            <directory>./src/StupidHttp/Tests/</directory>
+            <directory>tests/src/StupidHttp/Tests/</directory>
         </testsuite>
     </testsuites>
 </phpunit>
