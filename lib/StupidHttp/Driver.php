@@ -12,6 +12,10 @@ class StupidHttp_Driver
     protected $connections;
 
     // Driver Properties {{{
+
+    /**
+     * @var StupidHttp_WebServer
+     */
     protected $server;
     /**
      * Gets the server this driver is working for.
@@ -21,6 +25,9 @@ class StupidHttp_Driver
         return $this->server;
     }
 
+    /**
+     * @var StupidHttp_Log
+     */
     protected $log;
     /**
      * Gets the logger.
@@ -38,6 +45,9 @@ class StupidHttp_Driver
         $this->log = $log;
     }
 
+    /**
+     * @var StupidHttp_VirtualFileSystem
+     */
     protected $vfs;
     /**
      * Gets the virtual file system.
@@ -47,6 +57,9 @@ class StupidHttp_Driver
         return $this->vfs;
     }
 
+    /**
+     * @var StupidHttp_NetworkHandler
+     */
     protected $handler;
     /**
      * Gets the network handler.

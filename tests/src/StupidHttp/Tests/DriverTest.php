@@ -71,7 +71,7 @@ class DriverTest extends PHPUnit_Framework_TestCase
 
         $handler = $driver->getNetworkHandler();
         $actual = $handler->bucket;
-        $actualLines = explode("\n", $actual);
+        $actualLines = explode("\r\n", $actual);
 
         $this->assertEquals('HTTP/1.1 200 OK', $actualLines[0]);
 
